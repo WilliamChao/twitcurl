@@ -1,4 +1,5 @@
 #define NOMINMAX
+#include <algorithm>
 #include <memory.h>
 #include "twitcurlurls.h"
 #include "twitcurl.h"
@@ -626,7 +627,7 @@ bool twitCurl::timelineUserGet( const bool trimUser,
 
     if( tweetCount )
     {
-		std::stringstream tmpStrm;
+        std::stringstream tmpStrm;
         if( tweetCount < twitCurlDefaults::MAX_TIMELINE_TWEET_COUNT )
         {
             tmpStrm << twitCurlDefaults::TWITCURL_URL_SEP_AMP + twitCurlDefaults::TWITCURL_COUNT << tweetCount;
