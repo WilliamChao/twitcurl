@@ -8,6 +8,7 @@
 #include "oauthlib.h"
 #include "curl/curl.h"
 
+
 /* Few common types used by twitCurl */
 namespace twitCurlTypes
 {
@@ -59,7 +60,7 @@ public:
     bool timelinePublicGet();
     bool timelineFriendsGet();
     bool timelineUserGet( const bool trimUser /* in */,
-	                      const bool includeRetweets /* in */,
+                          const bool includeRetweets /* in */,
                           const unsigned int tweetCount /* in */,
                           const std::string userInfo = "" /* in */,
                           const bool isUserId = false /* in */ );
@@ -86,10 +87,10 @@ public:
     /* Twitter social graphs APIs */
     bool friendsIdsGet( const std::string& nextCursor /* in */,
                         const std::string& userInfo /* in */,
-	                    const bool isUserId = false /* in */ );
+                        const bool isUserId = false /* in */ );
     bool followersIdsGet( const std::string& nextCursor /* in */,
                           const std::string& userInfo /* in */,
-	                      const bool isUserId = false /* in */ );
+                          const bool isUserId = false /* in */ );
 
     /* Twitter account APIs */
     bool accountRateLimitGet();
@@ -105,7 +106,7 @@ public:
     bool blockDestroy( const std::string& userInfo /* in */ );
     bool blockListGet( const std::string& nextCursor /* in */,
                        const bool includeEntities /* in */,
-	                   const bool skipStatus /* in */ );
+                       const bool skipStatus /* in */ );
     bool blockIdsGet( const std::string& nextCursor /* in */, const bool stringifyIds /* in */ );
 
     /* Twitter search APIs */
