@@ -477,7 +477,7 @@ std::string twitCurl::uploadMedia(const std::string& binary, twitCurlTypes::eTwi
         long data_size = (long)binary.size();
         long data_left = data_size;
         const char *data = &binary[0];
-        long chunk_size = 1024 * 1024 * 4;
+        long chunk_size = 1024 * 1024 * 1;
         int segment = 0;
         while (ret) {
             prepareStandardParams();

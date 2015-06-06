@@ -88,7 +88,9 @@ void tcContext::setAccessToken(const char *token, const char *token_secret)
 
 bool tcContext::isAuthorized()
 {
-    return m_twitter.oAuthAccessToken();
+    std::string token;
+    m_twitter.getOAuth().getOAuthTokenSecret(token);
+    return !token.empty() && m_twitter.oAuthAccessToken();
 }
 
 std::string& tcContext::getAuthoosizeURL()
