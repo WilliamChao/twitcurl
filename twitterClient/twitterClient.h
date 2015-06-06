@@ -37,29 +37,20 @@ enum tcETweetStatus
     tcE_Failed,
 };
 
-enum tcEMediaType
-{
-    tcE_JPEG,
-    tcE_PNG,
-    tcE_GIF,
-    tcE_MP4,
-};
-
 
 tcCLinkage tcExport tcContext*      tcCreateContext();
 tcCLinkage tcExport void            tcDestroyContext(tcContext *ctx);
 
 tcCLinkage tcExport void            tcLoad(tcContext *ctx, const char *path);
 tcCLinkage tcExport void            tcSave(tcContext *ctx, const char *path);
-tcCLinkage tcExport void            tcSetUsernameAndPassword(tcContext *ctx, const char *username, const char *password);
 tcCLinkage tcExport void            tcSetConsumerKeyAndSecret(tcContext *ctx, const char *consumer_key, const char *consumer_secret);
 tcCLinkage tcExport void            tcSetAccessToken(tcContext *ctx, const char *token, const char *token_secret);
-
 tcCLinkage tcExport bool            tcIsAuthorized(tcContext *ctx);
 tcCLinkage tcExport const char*     tcGetAuthorizeURL(tcContext *ctx);
 tcCLinkage tcExport bool            tcEnterPin(tcContext *ctx, const char *pin);
 
-tcCLinkage tcExport bool            tcAddMedia(tcContext *ctx, const void *data, int data_size, tcEMediaType mtype);
+tcCLinkage tcExport bool            tcAddMedia(tcContext *ctx, const void *data, int data_size, twitCurlTypes::eTwitCurlMediaType mtype);
+tcCLinkage tcExport bool            tcAddMediaFromFile(tcContext *ctx, const char *path);
 tcCLinkage tcExport int             tcTweet(tcContext *ctx, const char *message);
 tcCLinkage tcExport tcETweetStatus  tcGetTweetStatus(tcContext *ctx, int thandle);
 

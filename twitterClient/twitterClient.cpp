@@ -12,12 +12,6 @@ int main(int argc, char *argv[])
 
     if (!tcIsAuthorized(ctx))
     {
-        printf("username:\n");
-        gets(buf1);
-        printf("password:\n");
-        gets(buf2);
-        tcSetUsernameAndPassword(ctx, buf1, buf2);
-
         printf("consumer key:\n");
         gets(buf1);
         printf("consumer secret:\n");
@@ -33,6 +27,8 @@ int main(int argc, char *argv[])
 
     if (tcIsAuthorized(ctx))
     {
+        tcAddMediaFromFile(ctx, "testdata.png");
+
         printf("tweet:\n");
         gets(buf1);
         tcTweet(ctx, buf1);

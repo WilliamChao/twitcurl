@@ -15,6 +15,7 @@ namespace twitCurlDefaults
 
     /* Miscellaneous data used to build twitter URLs*/
     const std::string TWITCURL_STATUSSTRING = "status=";
+    const std::string TWITCURL_MEDIAIDSSTRING = "media_ids=";
     const std::string TWITCURL_TEXTSTRING = "text=";
     const std::string TWITCURL_QUERYSTRING = "query=";
     const std::string TWITCURL_SEARCHQUERYSTRING = "q=";
@@ -48,6 +49,7 @@ namespace twitterDefaults
 {
     /* Base URL */
     const std::string TWITCURL_BASE_URL = "api.twitter.com/1.1/";
+    const std::string TWITCURL_UPLOAD_URL = "upload.twitter.com/1.1/";
 
     /* Search URLs */
     const std::string TWITCURL_SEARCH_URL = TWITCURL_BASE_URL + "search/tweets";
@@ -115,6 +117,9 @@ namespace twitterDefaults
     const std::string TWITCURL_TRENDSWEEKLY_URL = TWITCURL_BASE_URL + "trends/weekly";
     const std::string TWITCURL_TRENDSAVAILABLE_URL = TWITCURL_BASE_URL + "trends/available";
 
+
+    /* Upload URL */
+    const std::string TWITCURL_MEDIAUPLOAD_URL = TWITCURL_UPLOAD_URL + "media/upload";
 };
 
 namespace oAuthLibDefaults

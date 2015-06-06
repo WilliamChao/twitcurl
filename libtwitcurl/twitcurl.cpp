@@ -375,7 +375,7 @@ bool twitCurl::search( const std::string& searchQuery, const std::string resultC
 *          response by twitter. Use getLastWebResponse() for that.
 *
 *--*/
-bool twitCurl::statusUpdate( const std::string& newStatus, const std::string inReplyToStatusId )
+bool twitCurl::statusUpdate( const std::string& newStatus )
 {
     if( newStatus.empty() )
     {
@@ -385,19 +385,172 @@ bool twitCurl::statusUpdate( const std::string& newStatus, const std::string inR
     /* Prepare new status message */
     std::string newStatusMsg = twitCurlDefaults::TWITCURL_STATUSSTRING + urlencode( newStatus );
 
-    /* Append status id to which we're replying to */
-    if( inReplyToStatusId.size() )
-    {
-        newStatusMsg += twitCurlDefaults::TWITCURL_URL_SEP_AMP +
-                        twitCurlDefaults::TWITCURL_INREPLYTOSTATUSID +
-                        urlencode( inReplyToStatusId );
-    }
-
     /* Perform POST */
     return  performPost( twitCurlDefaults::TWITCURL_PROTOCOLS[m_eProtocolType] +
                          twitterDefaults::TWITCURL_STATUSUPDATE_URL +
                          twitCurlDefaults::TWITCURL_EXTENSIONFORMATS[m_eApiFormatType],
                          newStatusMsg );
+}
+
+bool twitCurl::statusUpdate(const twitStatus& stat)
+{
+    if (stat.status.empty())
+    {
+        return false;
+    }
+
+    std::string message = twitCurlDefaults::TWITCURL_STATUSSTRING + urlencode(stat.status);
+    if (stat.in_reply_to_status_id.size())
+    {
+        message += twitCurlDefaults::TWITCURL_URL_SEP_AMP +
+            twitCurlDefaults::TWITCURL_INREPLYTOSTATUSID +
+            urlencode(stat.in_reply_to_status_id);
+    }
+    if (stat.media_ids.size())
+    {
+        message += twitCurlDefaults::TWITCURL_URL_SEP_AMP +
+            twitCurlDefaults::TWITCURL_MEDIAIDSSTRING +
+            urlencode(stat.media_ids);
+    }
+
+    return  performPost(twitCurlDefaults::TWITCURL_PROTOCOLS[m_eProtocolType] +
+        twitterDefaults::TWITCURL_STATUSUPDATE_URL +
+        twitCurlDefaults::TWITCURL_EXTENSIONFORMATS[m_eApiFormatType],
+        message);
+}
+
+
+inline std::string extract_media_id_string(const std::string& json)
+{
+    std::smatch match;
+    std::regex expression("\"media_id_string\":\"(\\d+)\"");
+    if (std::regex_search(json, match, expression)) {
+        return match[1];
+    }
+    return "";
+}
+
+std::string twitCurl::uploadMedia(const std::string& binary, twitCurlTypes::eTwitCurlMediaType mtype)
+{
+    std::string url =
+        twitCurlDefaults::TWITCURL_PROTOCOLS[m_eProtocolType] +
+        twitterDefaults::TWITCURL_MEDIAUPLOAD_URL +
+        twitCurlDefaults::TWITCURL_EXTENSIONFORMATS[m_eApiFormatType];
+
+    std::string oAuthHttpHeader;
+    m_oAuth.getOAuthHeader(eOAuthHttpPost, url, "", oAuthHttpHeader);
+
+    struct curl_slist* pOAuthHeaderList = nullptr;
+    pOAuthHeaderList = curl_slist_append(pOAuthHeaderList, oAuthHttpHeader.c_str());
+
+    bool ret = false;
+    std::string media_id;
+
+    // MP4 must be chunked
+    if (mtype == twitCurlTypes::eTwitCurlMediaMP4)
+    {
+        long data_size = (long)binary.size();
+        const char *data = &binary[0];
+        const char *data_end = data + data_size;
+        long chunk_size = data_size / 3;
+
+        // INIT
+        {
+            prepareStandardParams();
+            char int_to_str[32];
+            sprintf(int_to_str, "%d", (int)binary.size());
+
+            struct curl_httppost* post = nullptr;
+            struct curl_httppost* last = nullptr;
+            curl_formadd(&post, &last, CURLFORM_COPYNAME, "command", CURLFORM_COPYCONTENTS, "INIT", CURLFORM_END);
+            curl_formadd(&post, &last, CURLFORM_COPYNAME, "media_type", CURLFORM_COPYCONTENTS, "video/mp4", CURLFORM_END);
+            curl_formadd(&post, &last, CURLFORM_COPYNAME, "total_bytes", CURLFORM_COPYCONTENTS, int_to_str, CURLFORM_END);
+            curl_formadd(&post, &last, CURLFORM_COPYNAME, "media",
+                CURLFORM_BUFFER, "data",
+                CURLFORM_BUFFERPTR, data,
+                CURLFORM_BUFFERLENGTH, chunk_size,
+                CURLFORM_END);
+            curl_easy_setopt(m_curlHandle, CURLOPT_URL, url.c_str());
+            curl_easy_setopt(m_curlHandle, CURLOPT_HTTPHEADER, pOAuthHeaderList);
+            curl_easy_setopt(m_curlHandle, CURLOPT_HTTPPOST, post);
+            ret = curl_easy_perform(m_curlHandle) == CURLE_OK;
+            curl_formfree(post);
+            if (ret)
+            {
+                std::string response;
+                getLastWebResponse(response);
+                media_id = extract_media_id_string(response);
+            }
+
+            data += chunk_size;
+        }
+
+        // APPEND
+        if (ret) {
+            prepareStandardParams();
+            struct curl_httppost* post = nullptr;
+            struct curl_httppost* last = nullptr;
+            curl_formadd(&post, &last, CURLFORM_COPYNAME, "command", CURLFORM_COPYCONTENTS, "APPEND", CURLFORM_END);
+            curl_formadd(&post, &last, CURLFORM_COPYNAME, "media_id", CURLFORM_COPYCONTENTS, media_id.c_str(), CURLFORM_END);
+            curl_formadd(&post, &last, CURLFORM_COPYNAME, "segment_index", CURLFORM_COPYCONTENTS, "0", CURLFORM_END);
+            curl_formadd(&post, &last, CURLFORM_COPYNAME, "media",
+                CURLFORM_BUFFER, "data",
+                CURLFORM_BUFFERPTR, data,
+                CURLFORM_BUFFERLENGTH, chunk_size,
+                CURLFORM_END);
+            curl_easy_setopt(m_curlHandle, CURLOPT_URL, url.c_str());
+            curl_easy_setopt(m_curlHandle, CURLOPT_HTTPHEADER, pOAuthHeaderList);
+            curl_easy_setopt(m_curlHandle, CURLOPT_HTTPPOST, post);
+            ret = curl_easy_perform(m_curlHandle) == CURLE_OK;
+            curl_formfree(post);
+
+            data += chunk_size;
+        }
+    
+        // FINALIZE
+        if (ret) {
+            prepareStandardParams();
+            struct curl_httppost* post = nullptr;
+            struct curl_httppost* last = nullptr;
+            curl_formadd(&post, &last, CURLFORM_COPYNAME, "command", CURLFORM_COPYCONTENTS, "FINALIZE", CURLFORM_END);
+            curl_formadd(&post, &last, CURLFORM_COPYNAME, "media_id", CURLFORM_COPYCONTENTS, media_id.c_str(), CURLFORM_END);
+            curl_formadd(&post, &last, CURLFORM_COPYNAME, "media",
+                CURLFORM_BUFFER, "data",
+                CURLFORM_BUFFERPTR, data,
+                CURLFORM_BUFFERLENGTH, long(data_end - data),
+                CURLFORM_END);
+            curl_easy_setopt(m_curlHandle, CURLOPT_URL, url.c_str());
+            curl_easy_setopt(m_curlHandle, CURLOPT_HTTPHEADER, pOAuthHeaderList);
+            curl_easy_setopt(m_curlHandle, CURLOPT_HTTPPOST, post);
+            ret = curl_easy_perform(m_curlHandle) == CURLE_OK;
+            curl_formfree(post);
+        }
+    }
+    else
+    {
+        prepareStandardParams();
+        struct curl_httppost* post = nullptr;
+        struct curl_httppost* last = nullptr;
+        curl_formadd(&post, &last, CURLFORM_COPYNAME, "media",
+            CURLFORM_BUFFER, "data",
+            CURLFORM_BUFFERPTR, &binary[0],
+            CURLFORM_BUFFERLENGTH, (long)binary.size(),
+            CURLFORM_END);
+        curl_easy_setopt(m_curlHandle, CURLOPT_URL, url.c_str());
+        curl_easy_setopt(m_curlHandle, CURLOPT_HTTPHEADER, pOAuthHeaderList);
+        curl_easy_setopt(m_curlHandle, CURLOPT_HTTPPOST, post);
+        ret = curl_easy_perform(m_curlHandle) == CURLE_OK;
+        if (ret)
+        {
+            std::string response;
+            getLastWebResponse(response);
+            media_id = extract_media_id_string(response);
+        }
+        curl_formfree(post);
+    }
+    curl_slist_free_all(pOAuthHeaderList);
+
+    return media_id;
 }
 
 /*++

@@ -5,6 +5,7 @@
 #include <sstream>
 #include <cstring>
 #include <vector>
+#include <regex>
 #include "oauthlib.h"
 #include "curl/curl.h"
 
@@ -12,19 +13,36 @@
 /* Few common types used by twitCurl */
 namespace twitCurlTypes
 {
-    typedef enum _eTwitCurlApiFormatType
+    enum eTwitCurlApiFormatType
     {
         eTwitCurlApiFormatJson = 0,
         eTwitCurlApiFormatXml,
         eTwitCurlApiFormatMax
-    } eTwitCurlApiFormatType;
+    };
 
-    typedef enum _eTwitCurlProtocolType
+    enum eTwitCurlProtocolType
     {
         eTwitCurlProtocolHttps = 0,
         eTwitCurlProtocolHttp,
         eTwitCurlProtocolMax
-    } eTwitCurlProtocolType;
+    };
+
+    enum eTwitCurlMediaType
+    {
+        eTwitCurlMediaUnknown,
+        eTwitCurlMediaPNG,
+        eTwitCurlMediaJPEG,
+        eTwitCurlMediaGIF,
+        eTwitCurlMediaWEBP,
+        eTwitCurlMediaMP4,
+    };
+};
+
+struct twitStatus
+{
+    std::string status;
+    std::string in_reply_to_status_id;
+    std::string media_ids;
 };
 
 /* twitCurl class */
@@ -50,8 +68,9 @@ public:
     bool search( const std::string& searchQuery /* in */, const std::string resultCount = "" /* in */ );
 
     /* Twitter status APIs */
-    bool statusUpdate( const std::string& newStatus /* in */, const std::string inReplyToStatusId = "" /* in */ );
-    bool statusShowById( const std::string& statusId /* in */ );
+    bool statusUpdate(const std::string& newStatus /* in */);
+    bool statusUpdate(const twitStatus& newStatus /* in */);
+    bool statusShowById(const std::string& statusId /* in */);
     bool statusDestroyById( const std::string& statusId /* in */ );
     bool retweetById( const std::string& statusId /* in */ );
 
@@ -121,6 +140,10 @@ public:
     bool trendsWeeklyGet();
     bool trendsCurrentGet();
     bool trendsAvailableGet();
+
+    /* Upload Media */
+    std::string uploadMedia(const std::string& binary, twitCurlTypes::eTwitCurlMediaType mtype);
+
 
     /* cURL APIs */
     bool isCurlInit();
