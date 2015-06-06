@@ -449,11 +449,6 @@ std::string twitCurl::uploadMedia(const std::string& binary, twitCurlTypes::eTwi
     // MP4 must be chunked
     if (mtype == twitCurlTypes::eTwitCurlMediaMP4)
     {
-        long data_size = (long)binary.size();
-        const char *data = &binary[0];
-        const char *data_end = data + data_size;
-        long chunk_size = data_size / 3;
-
         // INIT
         {
             prepareStandardParams();
@@ -465,11 +460,6 @@ std::string twitCurl::uploadMedia(const std::string& binary, twitCurlTypes::eTwi
             curl_formadd(&post, &last, CURLFORM_COPYNAME, "command", CURLFORM_COPYCONTENTS, "INIT", CURLFORM_END);
             curl_formadd(&post, &last, CURLFORM_COPYNAME, "media_type", CURLFORM_COPYCONTENTS, "video/mp4", CURLFORM_END);
             curl_formadd(&post, &last, CURLFORM_COPYNAME, "total_bytes", CURLFORM_COPYCONTENTS, int_to_str, CURLFORM_END);
-            curl_formadd(&post, &last, CURLFORM_COPYNAME, "media",
-                CURLFORM_BUFFER, "data",
-                CURLFORM_BUFFERPTR, data,
-                CURLFORM_BUFFERLENGTH, chunk_size,
-                CURLFORM_END);
             curl_easy_setopt(m_curlHandle, CURLOPT_URL, url.c_str());
             curl_easy_setopt(m_curlHandle, CURLOPT_HTTPHEADER, pOAuthHeaderList);
             curl_easy_setopt(m_curlHandle, CURLOPT_HTTPPOST, post);
@@ -481,22 +471,29 @@ std::string twitCurl::uploadMedia(const std::string& binary, twitCurlTypes::eTwi
                 getLastWebResponse(response);
                 media_id = extract_media_id_string(response);
             }
-
-            data += chunk_size;
         }
 
         // APPEND
-        if (ret) {
+        long data_size = (long)binary.size();
+        long data_left = data_size;
+        const char *data = &binary[0];
+        long chunk_size = 1024 * 1024 * 4;
+        int segment = 0;
+        while (ret) {
             prepareStandardParams();
+
+            long size_send = std::min<long>(data_left, chunk_size);
+            char int_to_str[32];
+            sprintf(int_to_str, "%d", segment);
             struct curl_httppost* post = nullptr;
             struct curl_httppost* last = nullptr;
             curl_formadd(&post, &last, CURLFORM_COPYNAME, "command", CURLFORM_COPYCONTENTS, "APPEND", CURLFORM_END);
             curl_formadd(&post, &last, CURLFORM_COPYNAME, "media_id", CURLFORM_COPYCONTENTS, media_id.c_str(), CURLFORM_END);
-            curl_formadd(&post, &last, CURLFORM_COPYNAME, "segment_index", CURLFORM_COPYCONTENTS, "0", CURLFORM_END);
+            curl_formadd(&post, &last, CURLFORM_COPYNAME, "segment_index", CURLFORM_COPYCONTENTS, int_to_str, CURLFORM_END);
             curl_formadd(&post, &last, CURLFORM_COPYNAME, "media",
                 CURLFORM_BUFFER, "data",
                 CURLFORM_BUFFERPTR, data,
-                CURLFORM_BUFFERLENGTH, chunk_size,
+                CURLFORM_BUFFERLENGTH, size_send,
                 CURLFORM_END);
             curl_easy_setopt(m_curlHandle, CURLOPT_URL, url.c_str());
             curl_easy_setopt(m_curlHandle, CURLOPT_HTTPHEADER, pOAuthHeaderList);
@@ -504,7 +501,10 @@ std::string twitCurl::uploadMedia(const std::string& binary, twitCurlTypes::eTwi
             ret = curl_easy_perform(m_curlHandle) == CURLE_OK;
             curl_formfree(post);
 
-            data += chunk_size;
+            data += size_send;
+            data_left -= size_send;
+            segment++;
+            if (data_left == 0) { break; }
         }
     
         // FINALIZE
@@ -514,11 +514,6 @@ std::string twitCurl::uploadMedia(const std::string& binary, twitCurlTypes::eTwi
             struct curl_httppost* last = nullptr;
             curl_formadd(&post, &last, CURLFORM_COPYNAME, "command", CURLFORM_COPYCONTENTS, "FINALIZE", CURLFORM_END);
             curl_formadd(&post, &last, CURLFORM_COPYNAME, "media_id", CURLFORM_COPYCONTENTS, media_id.c_str(), CURLFORM_END);
-            curl_formadd(&post, &last, CURLFORM_COPYNAME, "media",
-                CURLFORM_BUFFER, "data",
-                CURLFORM_BUFFERPTR, data,
-                CURLFORM_BUFFERLENGTH, long(data_end - data),
-                CURLFORM_END);
             curl_easy_setopt(m_curlHandle, CURLOPT_URL, url.c_str());
             curl_easy_setopt(m_curlHandle, CURLOPT_HTTPHEADER, pOAuthHeaderList);
             curl_easy_setopt(m_curlHandle, CURLOPT_HTTPPOST, post);
@@ -548,6 +543,7 @@ std::string twitCurl::uploadMedia(const std::string& binary, twitCurlTypes::eTwi
         }
         curl_formfree(post);
     }
+
     curl_slist_free_all(pOAuthHeaderList);
 
     return media_id;
