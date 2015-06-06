@@ -1,9 +1,11 @@
-#ifndef TwitterClient_h
+﻿#ifndef TwitterClient_h
 #define TwitterClient_h
 
 #include <cstdio>
 #include <iostream>
 #include <fstream>
+#include <memory>
+#include <thread>
 #include "twitcurl.h"
 
 //#pragma comment(lib, "libeay32.lib")
@@ -21,18 +23,17 @@
 #define tcCLinkage extern "C"
 #ifdef tcWindows
     #define tcExport __declspec(dllexport)
-    #define tcBreak() DebugBreak()
 #else // tcWindows
     #define tcExport
-    #define tcBreak() __builtin_trap()
 #endif // tcWindows
 
 
 class tcContext;
 
-enum tcETweetStatus
+enum tcETweetState
 {
     tcE_Unknown,
+    tcE_NotCompleted,
     tcE_Succeeded,
     tcE_Failed,
 };
@@ -50,8 +51,9 @@ tcCLinkage tcExport const char*     tcGetAuthorizeURL(tcContext *ctx);
 tcCLinkage tcExport bool            tcEnterPin(tcContext *ctx, const char *pin);
 
 tcCLinkage tcExport bool            tcAddMedia(tcContext *ctx, const void *data, int data_size, twitCurlTypes::eTwitCurlMediaType mtype);
-tcCLinkage tcExport bool            tcAddMediaFromFile(tcContext *ctx, const char *path);
+tcCLinkage tcExport bool            tcAddMediaFile(tcContext *ctx, const char *path);
 tcCLinkage tcExport int             tcTweet(tcContext *ctx, const char *message);
-tcCLinkage tcExport tcETweetStatus  tcGetTweetStatus(tcContext *ctx, int thandle);
+tcCLinkage tcExport tcETweetState   tcGetTweetStatus(tcContext *ctx, int thandle);
+tcCLinkage tcExport const char*     tcGetTweetResponse(tcContext *ctx, int thandle);
 
 #endif // TwitterClient_h

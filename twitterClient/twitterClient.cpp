@@ -1,4 +1,4 @@
-#include "TwitterClient.h"
+﻿#include "TwitterClient.h"
 
 #define tcPathToUserdata "tc_userdata.txt"
 
@@ -27,11 +27,15 @@ int main(int argc, char *argv[])
 
     if (tcIsAuthorized(ctx))
     {
-        tcAddMediaFromFile(ctx, "testdata.png");
+        tcAddMediaFile(ctx, "testdata.png");
 
         printf("tweet:\n");
         gets(buf1);
-        tcTweet(ctx, buf1);
+        int h = tcTweet(ctx, buf1);
+        while (tcGetTweetStatus(ctx, h) == tcE_NotCompleted) {
+            std::this_thread::sleep_for(std::chrono::microseconds(100));
+        }
+        puts(tcGetTweetResponse(ctx, h));
     }
 
     tcSave(ctx, tcPathToUserdata);

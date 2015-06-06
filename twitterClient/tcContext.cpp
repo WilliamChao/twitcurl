@@ -1,11 +1,27 @@
-﻿#include "TwitterClient.h"
+﻿#include <deque>
+#include <functional>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+#include "TwitterClient.h"
 
 
 struct tcMediaData
 {
     twitCurlTypes::eTwitCurlMediaType type;
     std::string data;
+    std::string file;
     std::string media_id;
+};
+typedef std::list<tcMediaData> tcMediaCont;
+typedef std::shared_ptr<tcMediaCont> tcMediaContPtr;
+
+struct tcTweetData
+{
+    tcETweetState state;
+    tcMediaContPtr media;
+    twitStatus status;
+    std::string response;
 };
 
 
@@ -26,25 +42,40 @@ public:
 
     bool            addHashTag(const char *tag);
     bool            addMedia(const void *data, int data_size, twitCurlTypes::eTwitCurlMediaType mtype);
-    bool            addMediaFromFile(const char *path);
+    bool            addMediaFile(const char *path);
     int             tweet(const char *message);
-    tcETweetStatus  getTweetStatus(int thandle);
+    tcTweetData*    getTweetData(int thandle);
+
+private:
+    void enqueueTask(const std::function<void()> &f);
+    void processTasks();
 
 private:
     twitCurl m_twitter;
     std::string m_authorize_url;
-    std::vector<tcMediaData> m_media;
-    std::vector<tcETweetStatus> m_status;
+    tcMediaContPtr m_media;
+    std::vector<tcTweetData> m_tweets;
+
+    std::thread m_send_thread;
+    std::mutex m_queue_mutex;
+    std::condition_variable m_condition;
+    std::deque<std::function<void ()>> m_tasks;
+    bool m_stop;
 };
 
 
 
 tcContext::tcContext()
+    : m_stop(false)
 {
+    m_send_thread = std::thread([this](){ processTasks(); });
 }
 
 tcContext::~tcContext()
 {
+    m_stop = true;
+    m_condition.notify_all();
+    m_send_thread.join();
 }
 
 
@@ -107,15 +138,9 @@ bool tcContext::enterPin(const char *pin)
 
 bool tcContext::addMedia(const void *data, int data_size, twitCurlTypes::eTwitCurlMediaType mtype)
 {
-    // 画像は 4 枚まで。動画は 1枚まで。
-    if (m_media.size() >= 4 ||
-        (!m_media.empty() && (m_media.front().type == twitCurlTypes::eTwitCurlMediaGIF || m_media.front().type == twitCurlTypes::eTwitCurlMediaMP4)))
-    {
-        return false;
-    }
-
-    m_media.push_back(tcMediaData());
-    tcMediaData &md = m_media.back();
+    if (!m_media) { m_media.reset(new tcMediaCont()); }
+    m_media->push_back(tcMediaData());
+    tcMediaData &md = m_media->back();
     md.type = mtype;
     md.data.assign((const char*)data, data_size);
     return true;
@@ -149,39 +174,89 @@ inline twitCurlTypes::eTwitCurlMediaType tcGetMediaTypeFromFilename(const char *
     return twitCurlTypes::eTwitCurlMediaUnknown;
 }
 
-bool tcContext::addMediaFromFile(const char *path)
+bool tcContext::addMediaFile(const char *path)
 {
+    // todo: file stream
     std::string binary;
-    twitCurlTypes::eTwitCurlMediaType type;
-    type = tcGetMediaTypeFromFilename(path);
-    if (type == twitCurlTypes::eTwitCurlMediaUnknown) { return false; }
+    twitCurlTypes::eTwitCurlMediaType mtype;
+    mtype = tcGetMediaTypeFromFilename(path);
+    if (mtype == twitCurlTypes::eTwitCurlMediaUnknown) { return false; }
     if (!tcFileToString(binary, path)) { return false; }
-    return addMedia(&binary[0], binary.size(), type);
+
+    return addMedia(&binary[0], (int)binary.size(), mtype);
+}
+
+
+void tcContext::enqueueTask(const std::function<void()> &f)
+{
+    {
+        std::unique_lock<std::mutex> lock(m_queue_mutex);
+        m_tasks.push_back(std::function<void()>(f));
+    }
+    m_condition.notify_one();
+}
+
+void tcContext::processTasks()
+{
+    while (!m_stop)
+    {
+        std::function<void()> task;
+        {
+            std::unique_lock<std::mutex> lock(m_queue_mutex);
+            while (!m_stop && m_tasks.empty()) {
+                m_condition.wait(lock);
+            }
+            if (m_stop) { return; }
+
+            task = m_tasks.front();
+            m_tasks.pop_front();
+        }
+        task();
+    }
 }
 
 
 int tcContext::tweet(const char *message)
 {
-    twitStatus stat;
-    stat.status = message;
-    for (auto &media : m_media)
-    {
-        if (media.media_id.empty()) {
-            media.media_id = m_twitter.uploadMedia(media.data, media.type);
-            if (media.media_id.empty()) { continue; }
+    // handle 0 must be invalid
+    if (m_tweets.empty()) { m_tweets.push_back(tcTweetData()); }
+    int ret = (int)m_tweets.size();
+
+    m_tweets.push_back(tcTweetData());
+    tcTweetData &tw = m_tweets.back();
+    tw.state = tcE_NotCompleted;
+    tw.status.status = message;
+    tw.media = m_media;
+    m_media.reset();
+
+    enqueueTask([this, &tw](){
+        if (tw.media) {
+            for (auto &media : *tw.media) {
+                if (media.media_id.empty()) {
+                    media.media_id = m_twitter.uploadMedia(media.data, media.type);
+                    if (media.media_id.empty()) { continue; }
+                }
+                if (!tw.status.media_ids.empty()) { tw.status.media_ids += ","; }
+                tw.status.media_ids += media.media_id;
+            }
         }
-        if (!stat.media_ids.empty()) { stat.media_ids += ","; }
-        stat.media_ids += media.media_id;
-    }
-    if (m_twitter.statusUpdate(stat)) {
-        m_media.clear();
-    }
-    return 0;
+        if (m_twitter.statusUpdate(tw.status)) {
+            m_twitter.getLastWebResponse(tw.response);
+            tw.state = tcE_Succeeded;
+        }
+        tw.media.reset();
+        tw.state = tcE_Failed;
+    });
+    return ret;
 }
 
-tcETweetStatus tcContext::getTweetStatus(int thandle)
+tcTweetData* tcContext::getTweetData(int thandle)
 {
-    return tcE_Unknown;
+    if (thandle <= m_tweets.size())
+    {
+        return &m_tweets[thandle];
+    }
+    return nullptr;
 }
 
 
@@ -231,17 +306,19 @@ tcCLinkage tcExport bool tcAddMedia(tcContext *ctx, const void *data, int data_s
 {
     return ctx->addMedia(data, data_size, mtype);
 }
-
-tcCLinkage tcExport bool tcAddMediaFromFile(tcContext *ctx, const char *path)
+tcCLinkage tcExport bool tcAddMediaFile(tcContext *ctx, const char *path)
 {
-    return ctx->addMediaFromFile(path);
+    return ctx->addMediaFile(path);
 }
-
 tcCLinkage tcExport int tcTweet(tcContext *ctx, const char *message)
 {
     return ctx->tweet(message);
 }
-tcCLinkage tcExport tcETweetStatus tcGetTweetStatus(tcContext *ctx, int thandle)
+tcCLinkage tcExport tcETweetState tcGetTweetStatus(tcContext *ctx, int thandle)
 {
-    return ctx->getTweetStatus(thandle);
+    return ctx->getTweetData(thandle)->state;
+}
+tcCLinkage tcExport const char* tcGetTweetResponse(tcContext *ctx, int thandle)
+{
+    return ctx->getTweetData(thandle)->response.c_str();
 }

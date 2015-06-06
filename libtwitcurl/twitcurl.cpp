@@ -394,11 +394,6 @@ bool twitCurl::statusUpdate( const std::string& newStatus )
 
 bool twitCurl::statusUpdate(const twitStatus& stat)
 {
-    if (stat.status.empty())
-    {
-        return false;
-    }
-
     std::string message = twitCurlDefaults::TWITCURL_STATUSSTRING + urlencode(stat.status);
     if (stat.in_reply_to_status_id.size())
     {
@@ -429,6 +424,7 @@ inline std::string extract_media_id_string(const std::string& json)
     }
     return "";
 }
+
 
 std::string twitCurl::uploadMedia(const std::string& binary, twitCurlTypes::eTwitCurlMediaType mtype)
 {
