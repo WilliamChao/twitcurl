@@ -5,7 +5,6 @@
 #include <sstream>
 #include <cstring>
 #include <vector>
-#include <regex>
 #include "oauthlib.h"
 #include "curl/curl.h"
 
@@ -142,7 +141,7 @@ public:
     bool trendsAvailableGet();
 
     /* Upload Media */
-    std::string uploadMedia(const std::string& binary, twitCurlTypes::eTwitCurlMediaType mtype);
+    bool uploadMedia(std::istream& is, twitCurlTypes::eTwitCurlMediaType mtype, std::string& o_media_id, std::string& o_error_message);
 
 
     /* cURL APIs */

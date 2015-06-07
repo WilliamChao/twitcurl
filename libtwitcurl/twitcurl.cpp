@@ -1,6 +1,7 @@
 #define NOMINMAX
 #include <algorithm>
 #include <memory.h>
+#include <picojson/picojson.h>
 #include "twitcurlurls.h"
 #include "twitcurl.h"
 #include "urlencode.h"
@@ -415,18 +416,18 @@ bool twitCurl::statusUpdate(const twitStatus& stat)
 }
 
 
-inline std::string extract_media_id_string(const std::string& json)
+
+inline size_t get_stream_size(std::istream &s)
 {
-    std::smatch match;
-    std::regex expression("\"media_id_string\":\"(\\d+)\"");
-    if (std::regex_search(json, match, expression)) {
-        return match[1];
-    }
-    return "";
+    size_t ret = 0;
+    s.seekg(0, std::ios::end);
+    ret = s.tellg();
+    s.seekg(0, std::ios::beg);
+    return ret;
 }
 
 
-std::string twitCurl::uploadMedia(const std::string& binary, twitCurlTypes::eTwitCurlMediaType mtype)
+bool twitCurl::uploadMedia(std::istream& is, twitCurlTypes::eTwitCurlMediaType mtype, std::string& media_id, std::string& error_message)
 {
     std::string url =
         twitCurlDefaults::TWITCURL_PROTOCOLS[m_eProtocolType] +
@@ -439,8 +440,11 @@ std::string twitCurl::uploadMedia(const std::string& binary, twitCurlTypes::eTwi
     struct curl_slist* pOAuthHeaderList = nullptr;
     pOAuthHeaderList = curl_slist_append(pOAuthHeaderList, oAuthHttpHeader.c_str());
 
+    std::string response;
+    picojson::value json;
     bool ret = false;
-    std::string media_id;
+    int size = (int)get_stream_size(is);
+    std::string buf;
 
     // MP4 must be chunked
     if (mtype == twitCurlTypes::eTwitCurlMediaMP4)
@@ -449,7 +453,7 @@ std::string twitCurl::uploadMedia(const std::string& binary, twitCurlTypes::eTwi
         {
             prepareStandardParams();
             char int_to_str[32];
-            sprintf(int_to_str, "%d", (int)binary.size());
+            sprintf(int_to_str, "%d", size);
 
             struct curl_httppost* post = nullptr;
             struct curl_httppost* last = nullptr;
@@ -463,24 +467,32 @@ std::string twitCurl::uploadMedia(const std::string& binary, twitCurlTypes::eTwi
             curl_formfree(post);
             if (ret)
             {
-                std::string response;
                 getLastWebResponse(response);
-                media_id = extract_media_id_string(response);
+                picojson::parse(json, response);
+                if (json.contains("media_id_string")) {
+                    media_id = json.get("media_id_string").get<std::string>();
+                }
+                else {
+                    ret = false;
+                }
             }
         }
 
         // APPEND
-        long data_size = (long)binary.size();
+        const int buf_size = 1024 * 1024 * 1;
+        buf.resize(buf_size);
+        long data_size = size;
         long data_left = data_size;
-        const char *data = &binary[0];
         long chunk_size = 1024 * 1024 * 1;
         int segment = 0;
         while (ret) {
             prepareStandardParams();
 
             long size_send = std::min<long>(data_left, chunk_size);
+            is.read(&buf[0], size_send);
             char int_to_str[32];
             sprintf(int_to_str, "%d", segment);
+
             struct curl_httppost* post = nullptr;
             struct curl_httppost* last = nullptr;
             curl_formadd(&post, &last, CURLFORM_COPYNAME, "command", CURLFORM_COPYCONTENTS, "APPEND", CURLFORM_END);
@@ -488,7 +500,7 @@ std::string twitCurl::uploadMedia(const std::string& binary, twitCurlTypes::eTwi
             curl_formadd(&post, &last, CURLFORM_COPYNAME, "segment_index", CURLFORM_COPYCONTENTS, int_to_str, CURLFORM_END);
             curl_formadd(&post, &last, CURLFORM_COPYNAME, "media",
                 CURLFORM_BUFFER, "data",
-                CURLFORM_BUFFERPTR, data,
+                CURLFORM_BUFFERPTR, &buf[0],
                 CURLFORM_BUFFERLENGTH, size_send,
                 CURLFORM_END);
             curl_easy_setopt(m_curlHandle, CURLOPT_URL, url.c_str());
@@ -497,7 +509,6 @@ std::string twitCurl::uploadMedia(const std::string& binary, twitCurlTypes::eTwi
             ret = curl_easy_perform(m_curlHandle) == CURLE_OK;
             curl_formfree(post);
 
-            data += size_send;
             data_left -= size_send;
             segment++;
             if (data_left == 0) { break; }
@@ -519,13 +530,16 @@ std::string twitCurl::uploadMedia(const std::string& binary, twitCurlTypes::eTwi
     }
     else
     {
+        buf.resize(size);
+        is.read(&buf[0], size);
+
         prepareStandardParams();
         struct curl_httppost* post = nullptr;
         struct curl_httppost* last = nullptr;
         curl_formadd(&post, &last, CURLFORM_COPYNAME, "media",
             CURLFORM_BUFFER, "data",
-            CURLFORM_BUFFERPTR, &binary[0],
-            CURLFORM_BUFFERLENGTH, (long)binary.size(),
+            CURLFORM_BUFFERPTR, &buf[0],
+            CURLFORM_BUFFERLENGTH, size,
             CURLFORM_END);
         curl_easy_setopt(m_curlHandle, CURLOPT_URL, url.c_str());
         curl_easy_setopt(m_curlHandle, CURLOPT_HTTPHEADER, pOAuthHeaderList);
@@ -533,16 +547,26 @@ std::string twitCurl::uploadMedia(const std::string& binary, twitCurlTypes::eTwi
         ret = curl_easy_perform(m_curlHandle) == CURLE_OK;
         if (ret)
         {
-            std::string response;
             getLastWebResponse(response);
-            media_id = extract_media_id_string(response);
+            picojson::parse(json, response);
+            if (json.contains("media_id_string")) {
+                media_id = json.get("media_id_string").get<std::string>();
+            }
+            else {
+                ret = false;
+            }
         }
         curl_formfree(post);
     }
 
     curl_slist_free_all(pOAuthHeaderList);
 
-    return media_id;
+    if (!ret) {
+        if (json.contains("error")) {
+            error_message = json.get("error").get<std::string>();
+        }
+    }
+    return ret;
 }
 
 /*++
